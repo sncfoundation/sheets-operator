@@ -1,0 +1,14 @@
+# SheetsOperator — always-on controller. Put your Google OAuth authorized-user JSON
+# next to this file as creds.json, set SHEETSOP_CONTROL, then: docker compose up -d
+services:
+  sheets-operator:
+    build: .
+    restart: unless-stopped
+    environment:
+      SHEETSOP_CONTROL: "${SHEETSOP_CONTROL:?set SHEETSOP_CONTROL to your control-plane spreadsheet id}"
+      SHEETSOP_TEMPLATES: "/templates"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./creds.json:/creds/creds.json:ro       # your Google OAuth authorized-user json
+      - ./templates:/templates:ro               # extra templates (e.g. a demos checkout)
+    command: ["run", "--interval", "10"]
