@@ -32,36 +32,66 @@ control plane (ManagedSheets registry)  →  controller loop (this)  →  manage
 A template describes desired state: a `banner`, a `caption`, and an optional pixel `grid`
 (cell-background image). See [`templates/hello.json`](templates/hello.json).
 
-## Run it (always-on)
+## Deploy (run it 24/7)
 
-The controller needs Docker, a Google OAuth **authorized-user** JSON (spreadsheets + drive
-scopes), and the control-plane spreadsheet id. To keep managed sheets healed 24/7, run it on an
-always-on host (a small VM) — not a laptop that sleeps.
+Run the controller on an **always-on host** (a small VM). A laptop works for a demo, but while it
+sleeps the controller is paused and edits are not repaired until it wakes.
+
+### 1. Prerequisites
+
+- **Docker** and **git** on the host.
+- A **Google OAuth "authorized-user" JSON** for an account that can edit the sheets, with the
+  `spreadsheets` and `drive` scopes. It contains a `refresh_token` (the controller refreshes
+  itself, so it keeps working). Keep this file private — never commit it.
+- The **control-plane spreadsheet id** (`SHEETSOP_CONTROL`) — the registry of managed sheets.
+
+### 2. Get the code and add your credentials
 
 ```bash
-git clone https://github.com/sncfoundation/sheets-operator && cd sheets-operator
-cp /path/to/your/google-oauth-authorized-user.json creds.json     # never commit this
+git clone https://github.com/sncfoundation/sheets-operator
+git clone https://github.com/sncfoundation/demos          # templates (e.g. sep3) live here
+cd sheets-operator
+cp /path/to/your/authorized-user.json creds.json          # your Google creds; never commit
+```
+
+### 3. Start it
+
+With docker compose (edit `SHEETSOP_CONTROL`, put templates in `./templates` or mount the demos repo):
+
+```bash
 export SHEETSOP_CONTROL=<your-control-plane-spreadsheet-id>
-# optional: extra templates (e.g. the demos repo) go in ./templates
 docker compose up -d --build
 docker compose logs -f
 ```
 
-Or without compose:
+Or with plain `docker run` (mounts creds + the demos templates so it knows the `sep3` desired state):
 
 ```bash
 docker build -t sheets-operator:1 .
 docker run -d --name sheets-operator --restart unless-stopped \
-  -e SHEETSOP_CONTROL=<control-plane-id> -e PYTHONUNBUFFERED=1 \
-  -v $PWD/creds.json:/creds/creds.json:ro \
-  -v $PWD/templates:/templates:ro -e SHEETSOP_TEMPLATES=/templates \
+  -e SHEETSOP_CONTROL=<your-control-plane-spreadsheet-id> \
+  -e SHEETSOP_TEMPLATES=/templates -e PYTHONUNBUFFERED=1 \
+  -v "$PWD/creds.json:/creds/creds.json:ro" \
+  -v "$PWD/../demos/sep3:/templates:ro" \
   sheets-operator:1 run --interval 10
 ```
 
-**Moving to another host does not change any spreadsheet links.** The controller reconciles
-*existing* sheets by the ids in the control plane. Point a new host at the **same**
-`SHEETSOP_CONTROL` with the **same** creds and it drives the same sheets — same URLs. Run `run`,
-not `apply` (apply creates *new* sheets).
+### 4. Verify
+
+```bash
+docker ps                       # sheets-operator should be "Up"
+docker logs sheets-operator     # expect: "reconciled <name> (<template>)"
+```
+
+Now edit a managed sheet (recolor a cell, delete something) and within a few seconds it snaps back.
+
+### Important
+
+- **Use `run`, not `apply`.** `run` heals *existing* sheets. `apply` creates *new* ones.
+- **Moving to another host does not change any spreadsheet links.** The controller reconciles
+  existing sheets by their ids in the control plane. Point a new host at the **same**
+  `SHEETSOP_CONTROL` with the **same** creds and it drives the same sheets — identical URLs.
+- Run only **one** controller per control plane (harmless if two — reconciles are idempotent — but pointless).
 
 ## As a Sheeternetes workload
 
