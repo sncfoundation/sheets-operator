@@ -81,6 +81,7 @@ def reconcile_target(sheets, target_id, tpl):
     banner = tpl.get("banner", tpl.get("title", ""))
     caption = tpl.get("caption", "")
     banner2 = tpl.get("banner2", "")         # optional second banner (e.g. red)
+    cell_px = tpl.get("cell_px", 16)         # image/strip cell size: smaller = finer detail, same footprint
     face_top = 3 if banner2 else 2           # 0 banner, 1 caption, [2 banner2], image below
     need_cols = max(W, SW, 8)
     need_rows = face_top + H + SH + 1
@@ -98,7 +99,7 @@ def reconcile_target(sheets, target_id, tpl):
         "fields": "userEnteredValue,userEnteredFormat"}}
     def _paint(start, g, gw, gh): return [
         {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS",
-            "startIndex": start, "endIndex": start + gh}, "properties": {"pixelSize": 16}, "fields": "pixelSize"}},
+            "startIndex": start, "endIndex": start + gh}, "properties": {"pixelSize": cell_px}, "fields": "pixelSize"}},
         {"updateCells": {"start": {"sheetId": sid, "rowIndex": start, "columnIndex": 0},
             "rows": [{"values": [{"userEnteredFormat": {"backgroundColor": _hex(g[y][x])}} for x in range(gw)]}
                      for y in range(gh)], "fields": "userEnteredFormat.backgroundColor"}}]
@@ -107,7 +108,7 @@ def reconcile_target(sheets, target_id, tpl):
         {"updateSheetProperties": {"properties": {"sheetId": sid, "gridProperties":
             {"rowCount": need_rows, "columnCount": need_cols}}, "fields": "gridProperties"}},
         {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS",
-            "startIndex": 0, "endIndex": need_cols}, "properties": {"pixelSize": 16}, "fields": "pixelSize"}},
+            "startIndex": 0, "endIndex": need_cols}, "properties": {"pixelSize": cell_px}, "fields": "pixelSize"}},
         _band(0, 46), _band(1, 24), _merge(0), _merge(1),
         _text(0, banner, "#d29922", "#1a1a1a", 18, True),
         _text(1, caption, "#ffffff", "#666666", 9, False),
