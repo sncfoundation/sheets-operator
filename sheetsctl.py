@@ -100,9 +100,11 @@ def reconcile_target(sheets, target_id, tpl):
     def _paint(start, g, gw, gh): return [
         {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS",
             "startIndex": start, "endIndex": start + gh}, "properties": {"pixelSize": cell_px}, "fields": "pixelSize"}},
+        # paint the background AND clear any cell value/note under it, so an in-cell image
+        # (=IMAGE(), inserted-in-cell), a pasted formula, or a note gets wiped on reconcile too.
         {"updateCells": {"start": {"sheetId": sid, "rowIndex": start, "columnIndex": 0},
             "rows": [{"values": [{"userEnteredFormat": {"backgroundColor": _hex(g[y][x])}} for x in range(gw)]}
-                     for y in range(gh)], "fields": "userEnteredFormat.backgroundColor"}}]
+                     for y in range(gh)], "fields": "userEnteredFormat.backgroundColor,userEnteredValue,note"}}]
 
     reqs = [
         {"updateSheetProperties": {"properties": {"sheetId": sid, "gridProperties":
@@ -119,6 +121,11 @@ def reconcile_target(sheets, target_id, tpl):
         reqs += _paint(face_top, grid, W, H)
     if strip:
         reqs += _paint(face_top + H, strip, SW, SH)
+    # delete embedded charts a vandal may have dropped on the sheet (the one class of
+    # floating object the Sheets API exposes; over-cell images/drawings are not in the API).
+    for sh in meta.get("sheets", []):
+        for ch in sh.get("charts", []):
+            reqs.append({"deleteEmbeddedObject": {"objectId": ch["chartId"]}})
 
     sheets.spreadsheets().batchUpdate(spreadsheetId=target_id, body={"requests": reqs}).execute()
 
