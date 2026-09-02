@@ -76,16 +76,32 @@ def reconcile_target(sheets, target_id, tpl):
     sid = meta["sheets"][0]["properties"]["sheetId"]
     grid = tpl.get("grid")                   # optional pixel image (cell backgrounds)
     W, H = (tpl.get("w", 0), tpl.get("h", 0)) if grid else (0, 0)
+    strip = tpl.get("strip")                 # optional pixel band under the image
+    SW, SH = (tpl.get("strip_w", 0), tpl.get("strip_h", 0)) if strip else (0, 0)
     banner = tpl.get("banner", tpl.get("title", ""))
     caption = tpl.get("caption", "")
-    top = 2                                  # row0 = banner, row1 = caption, image from row2
-    need_rows, need_cols = top + H + 1, max(W, 8)
+    banner2 = tpl.get("banner2", "")         # optional second banner (e.g. red)
+    face_top = 3 if banner2 else 2           # 0 banner, 1 caption, [2 banner2], image below
+    need_cols = max(W, SW, 8)
+    need_rows = face_top + H + SH + 1
 
     def _band(row, h): return {"updateDimensionProperties": {"range": {"sheetId": sid,
         "dimension": "ROWS", "startIndex": row, "endIndex": row + 1},
         "properties": {"pixelSize": h}, "fields": "pixelSize"}}
     def _merge(row): return {"mergeCells": {"range": {"sheetId": sid, "startRowIndex": row,
         "endRowIndex": row + 1, "startColumnIndex": 0, "endColumnIndex": need_cols}, "mergeType": "MERGE_ALL"}}
+    def _text(row, s, bg, fg, size, bold): return {"repeatCell": {"range": {"sheetId": sid,
+        "startRowIndex": row, "endRowIndex": row + 1, "startColumnIndex": 0, "endColumnIndex": need_cols},
+        "cell": {"userEnteredValue": {"stringValue": s}, "userEnteredFormat": {"backgroundColor": _hex(bg),
+            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
+            "textFormat": {"bold": bold, "fontSize": size, "foregroundColor": _hex(fg)}}},
+        "fields": "userEnteredValue,userEnteredFormat"}}
+    def _paint(start, g, gw, gh): return [
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS",
+            "startIndex": start, "endIndex": start + gh}, "properties": {"pixelSize": 16}, "fields": "pixelSize"}},
+        {"updateCells": {"start": {"sheetId": sid, "rowIndex": start, "columnIndex": 0},
+            "rows": [{"values": [{"userEnteredFormat": {"backgroundColor": _hex(g[y][x])}} for x in range(gw)]}
+                     for y in range(gh)], "fields": "userEnteredFormat.backgroundColor"}}]
 
     reqs = [
         {"updateSheetProperties": {"properties": {"sheetId": sid, "gridProperties":
@@ -93,31 +109,15 @@ def reconcile_target(sheets, target_id, tpl):
         {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS",
             "startIndex": 0, "endIndex": need_cols}, "properties": {"pixelSize": 16}, "fields": "pixelSize"}},
         _band(0, 46), _band(1, 24), _merge(0), _merge(1),
-        # banner: centered, gold, bold
-        {"repeatCell": {"range": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": 1,
-            "startColumnIndex": 0, "endColumnIndex": need_cols},
-            "cell": {"userEnteredValue": {"stringValue": banner},
-                     "userEnteredFormat": {"backgroundColor": _hex("#d29922"),
-                        "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
-                        "textFormat": {"bold": True, "fontSize": 18, "foregroundColor": _hex("#1a1a1a")}}},
-            "fields": "userEnteredValue,userEnteredFormat"}},
-        # caption: below the banner, no fill, smaller, not bold
-        {"repeatCell": {"range": {"sheetId": sid, "startRowIndex": 1, "endRowIndex": 2,
-            "startColumnIndex": 0, "endColumnIndex": need_cols},
-            "cell": {"userEnteredValue": {"stringValue": caption},
-                     "userEnteredFormat": {"backgroundColor": _hex("#ffffff"),
-                        "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
-                        "textFormat": {"bold": False, "fontSize": 9, "foregroundColor": _hex("#666666")}}},
-            "fields": "userEnteredValue,userEnteredFormat"}},
+        _text(0, banner, "#d29922", "#1a1a1a", 18, True),
+        _text(1, caption, "#ffffff", "#666666", 9, False),
     ]
+    if banner2:
+        reqs += [_band(2, 42), _merge(2), _text(2, banner2, "#c0201f", "#ffffff", 22, True)]
     if grid:
-        # size the image rows square, then paint the pixels as one updateCells
-        reqs.append({"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS",
-            "startIndex": top, "endIndex": top + H}, "properties": {"pixelSize": 16}, "fields": "pixelSize"}})
-        rows_data = [{"values": [
-            {"userEnteredFormat": {"backgroundColor": _hex(grid[y][x])}} for x in range(W)]} for y in range(H)]
-        reqs.append({"updateCells": {"start": {"sheetId": sid, "rowIndex": top, "columnIndex": 0},
-            "rows": rows_data, "fields": "userEnteredFormat.backgroundColor"}})
+        reqs += _paint(face_top, grid, W, H)
+    if strip:
+        reqs += _paint(face_top + H, strip, SW, SH)
 
     sheets.spreadsheets().batchUpdate(spreadsheetId=target_id, body={"requests": reqs}).execute()
 
