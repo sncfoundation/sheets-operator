@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Compile check
+        run: python -m py_compile sheetsctl.py
+      - name: Templates are valid JSON
+        run: jq empty templates/*.json
+      - name: Container image builds
+        run: docker build -t sheets-operator:ci .
